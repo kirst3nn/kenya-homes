@@ -329,6 +329,48 @@ function AdminPanel() {
   )
 }
 
+function LegalPage({ terms = false }) {
+  return (
+    <section className="hero" aria-labelledby="legal-title">
+      <h1 id="legal-title">{terms ? 'Terms and conditions' : 'Privacy policy'}</h1>
+      <p><strong>Learning demo notice. Not a live property service.</strong> These notices describe this local version and must be reviewed before public launch.</p>
+      {terms ? (
+        <>
+          <h2>Demo use only</h2>
+          <p>Kenya Homes is an educational software project. All listings, locations, prices and descriptions are fictional examples, not offers to sell or rent. Photos are illustrative and do not show the fictional properties.</p>
+          <h2>No transactions or agency service</h2>
+          <p>This website does not accept payments, reserve property, verify listings or arrange viewings. Saving a demo enquiry does not contact an agent, send an email or create an agreement.</p>
+          <h2>Responsible use</h2>
+          <p>Use fictional details when testing forms. Do not submit sensitive information, spam the service, attempt unauthorized admin access or use it to mislead others.</p>
+          <h2>Photos and credits</h2>
+          <p>Illustrative photos are credited beside the images. Their inclusion does not imply endorsement by a photographer or property owner.</p>
+          <h2>Availability and changes</h2>
+          <p>This project is under development. Features may change and local demo records may be reset. Do not rely on it for housing, financial or legal decisions. These terms do not limit rights that cannot lawfully be excluded.</p>
+          <h2>Before public launch</h2>
+          <p>The operator must identify themselves, provide a working contact method and review these terms for the actual service. This draft is not a statement of legal compliance.</p>
+        </>
+      ) : (
+        <>
+          <h2>Demo enquiries</h2>
+          <p>The contact form sends the name, email address and message you enter to this project's backend. They are saved in its local SQLite database for testing. No enquiry email is sent. Use fictional information only.</p>
+          <h2>Admin account and cookies</h2>
+          <p>The admin account is created privately. The backend stores a salted password hash, not the original password. Login sends credentials to the backend for verification. Never share admin credentials in a demo enquiry.</p>
+          <p>Successful admin login uses an essential session cookie called kh.admin.sid to maintain access. The session cookie has a one-hour lifetime and is cleared by logout; the server invalidates the session on logout. Disabling cookies prevents admin login from working.</p>
+          <h2>Analytics and other storage</h2>
+          <p>This version has no analytics integration or optional tracking cookies. No optional analytics consent is collected yet. This policy and cookie controls must be updated before any optional tracking is enabled.</p>
+          <h2>Photos and technical requests</h2>
+          <p>Demo photos are served with this project. Browsers send technical information with requests, including an IP address. A future hosting provider may process request logs; its actual practices must be disclosed before publication.</p>
+          <h2>Retention and deletion</h2>
+          <p>Demo enquiries remain in the local database until the project operator removes them or resets the database. There is not yet an automatic enquiry deletion schedule or a public deletion-request channel. Local backups may also contain demo records.</p>
+          <h2>Before public launch</h2>
+          <p>The operator must publish their identity and contact method, define a retention period, identify hosting and analytics providers, and explain how people can make privacy requests. This local-demo notice does not establish readiness to collect real personal information.</p>
+        </>
+      )}
+      <a href="#/">Back to Home</a>
+    </section>
+  )
+}
+
 function readPage() {
   return window.location.hash.slice(1) || '/'
 }
@@ -395,7 +437,7 @@ export default function App() {
   const selectedProperty = properties.find(
     (property) => page === `/property/${property.id}`
   )
-  const isPublicPage = ['/', '/properties', '/about', '/contact', '/admin'].includes(page)
+  const isPublicPage = ['/', '/properties', '/about', '/contact', '/admin', '/privacy', '/terms'].includes(page)
   const isPropertyPage = page.startsWith('/property/')
 
   return (
@@ -411,6 +453,8 @@ export default function App() {
         </nav>
       </header>
       <main>
+        {page === '/privacy' && <LegalPage />}
+        {page === '/terms' && <LegalPage terms />}
         {page === '/admin' && <AdminPanel />}
         {page === '/' && (
           <>
@@ -481,6 +525,14 @@ export default function App() {
           </section>
         )}
       </main>
+      <footer style={{ maxWidth: 1000, margin: '0 auto', padding: '24px', borderTop: '1px solid #dddddd', lineHeight: 1.6 }}>
+        <p>Kenya Homes learning demo. Fictional listings, illustrative photos, no real transactions.</p>
+        <nav aria-label="Legal information">
+          <a href="#/privacy">Privacy policy</a>
+          <a href="#/terms">Terms and conditions</a>
+        </nav>
+      </footer>
     </>
   )
 }
+
