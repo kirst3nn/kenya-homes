@@ -2,6 +2,11 @@ const express = require('express')
 const { DatabaseSync } = require('node:sqlite')
 const path = require('node:path')
 const fs = require('node:fs')
+const crypto = require('node:crypto')
+const { promisify } = require('node:util')
+const session = require('express-session')
+const { rateLimit } = require('express-rate-limit')
+const scrypt = promisify(crypto.scrypt)
 
 const app = express()
 const PORT = Number(process.env.PORT || 3001)
@@ -48,6 +53,141 @@ const dataFolder = process.env.DATA_DIR
 fs.mkdirSync(dataFolder, { recursive: true })
 const databasePath = path.join(dataFolder, 'kenya-homes.sqlite')
 const database = new DatabaseSync(databasePath)
+
+
+// Admin credentials and session secrets must remain inside the private data folder.
+const isProduction = process.env.NODE_ENV === 'production'
+if (isProduction && !process.env.APP_ORIGIN) {
+  throw new Error('Set APP_ORIGIN to the HTTPS website origin before public hosting.')
+}
+const allowedOrigins = new Set(isProduction
+  ? [process.env.APP_ORIGIN]
+  : [`http://127.0.0.1:${PORT}`, `http://localhost:${PORT}`, 'http://localhost:5173', 'http://127.0.0.1:5173'])
+if (isProduction && !process.env.APP_ORIGIN.startsWith('https://')) {
+  throw new Error('Public admin login requires HTTPS.')
+}
+// Enable only for a hosting service with exactly one trusted reverse proxy.
+if (process.env.TRUST_PROXY === '1') app.set('trust proxy', 1)
+
+const secretPath = path.join(dataFolder, 'session-secret.txt')
+if (!fs.existsSync(secretPath)) {
+  fs.writeFileSync(secretPath, crypto.randomBytes(48).toString('hex'), { flag: 'wx', mode: 0o600 })
+}
+const sessionSecret = fs.readFileSync(secretPath, 'utf8').trim()
+if (sessionSecret.length < 64) throw new Error('The private session secret is invalid.')
+
+database.exec(`CREATE TABLE IF NOT EXISTS admin_sessions (
+  sid TEXT PRIMARY KEY, contents TEXT NOT NULL, expires INTEGER NOT NULL
+) STRICT`)
+class SQLiteSessionStore extends session.Store {
+  get(sid, callback) {
+    try {
+      const row = database.prepare('SELECT contents, expires FROM admin_sessions WHERE sid = ?').get(sid)
+      if (!row || row.expires <= Date.now()) {
+        if (row) database.prepare('DELETE FROM admin_sessions WHERE sid = ?').run(sid)
+        return callback(null, null)
+      }
+      callback(null, JSON.parse(row.contents))
+    } catch (error) { callback(error) }
+  }
+  set(sid, value, callback = () => {}) {
+    try {
+      const expires = value.cookie.expires ? new Date(value.cookie.expires).getTime() : Date.now() + 3600000
+      database.prepare('DELETE FROM admin_sessions WHERE expires <= ?').run(Date.now())
+      database.prepare('INSERT OR REPLACE INTO admin_sessions (sid, contents, expires) VALUES (?, ?, ?)')
+        .run(sid, JSON.stringify(value), expires)
+      callback(null)
+    } catch (error) { callback(error) }
+  }
+  destroy(sid, callback = () => {}) {
+    try {
+      database.prepare('DELETE FROM admin_sessions WHERE sid = ?').run(sid)
+      callback(null)
+    } catch (error) { callback(error) }
+  }
+}
+
+app.use('/api/admin', (request, response, next) => {
+  response.set('Cache-Control', 'no-store')
+  response.set('X-Content-Type-Options', 'nosniff')
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    // Custom headers require browser preflight across origins; we enable no CORS.
+    if (request.get('X-Admin-Request') !== '1' ||
+        (request.get('origin') && !allowedOrigins.has(request.get('origin')))) {
+      return response.status(403).json({ message: 'Admin request not allowed.' })
+    }
+  }
+  next()
+})
+app.use('/api/admin', session({
+  name: 'kh.admin.sid',
+  secret: sessionSecret,
+  store: new SQLiteSessionStore(),
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'strict', secure: isProduction, maxAge: 3600000, path: '/api/admin' }
+}))
+
+function requireAdmin(request, response, next) {
+  if (!request.session?.admin) {
+    return response.status(401).json({ message: 'Please log in as admin.' })
+  }
+  next()
+}
+
+app.get('/api/admin/session', (request, response) => {
+  response.json({ authenticated: Boolean(request.session.admin), username: request.session.admin || null })
+})
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Too many login attempts. Try again in 15 minutes.' }
+})
+app.post('/api/admin/login', loginLimiter, async (request, response, next) => {
+  try {
+    if (!request.is('application/json')) return response.status(415).json({ message: 'Send JSON.' })
+    const { username, password } = request.body || {}
+    if (typeof username !== 'string' || typeof password !== 'string' ||
+        username.length > 40 || password.length > 128 || !password.length) {
+      return response.status(401).json({ message: 'Incorrect username or password.' })
+    }
+    const accountPath = path.join(dataFolder, 'admin.json')
+    if (!fs.existsSync(accountPath)) {
+      return response.status(503).json({ message: 'Admin account is not configured. Run setup-admin.cjs privately.' })
+    }
+    const account = JSON.parse(fs.readFileSync(accountPath, 'utf8'))
+    if (account.algorithm !== 'scrypt' || !/^[a-f0-9]{128}$/.test(account.hash) ||
+        !/^[a-f0-9]{64}$/.test(account.salt)) throw new Error('Invalid admin credential file.')
+    const candidate = await scrypt(password, account.salt, 64,
+      { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 })
+    const validPassword = crypto.timingSafeEqual(candidate, Buffer.from(account.hash, 'hex'))
+    if (!validPassword || username.trim() !== account.username) {
+      return response.status(401).json({ message: 'Incorrect username or password.' })
+    }
+    request.session.regenerate(error => {
+      if (error) return next(error)
+      request.session.admin = account.username
+      request.session.save(saveError => {
+        if (saveError) return next(saveError)
+        response.json({ authenticated: true, username: account.username })
+      })
+    })
+  } catch (error) { next(error) }
+})
+app.post('/api/admin/logout', (request, response, next) => {
+  request.session.destroy(error => {
+    if (error) return next(error)
+    response.clearCookie('kh.admin.sid', { path: '/api/admin', httpOnly: true, sameSite: 'strict', secure: isProduction })
+    response.json({ authenticated: false })
+  })
+})
+// Every subsequent admin route requires server-side authorization.
+app.use('/api/admin', requireAdmin)
+app.get('/api/admin/check', (request, response) => {
+  response.json({ message: 'Protected admin access confirmed.', username: request.session.admin })
+})
 
 // A table is like a spreadsheet: each property is one row.
 database.exec(`

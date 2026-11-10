@@ -219,6 +219,116 @@ function PropertyStatus({ loading, error }) {
   )
 }
 
+
+function AdminPanel() {
+  const [account, setAccount] = useState(null)
+  const [checking, setChecking] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10000)
+    fetch('/api/admin/session', { credentials: 'same-origin', signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error('Could not check your login session.')
+        const data = await response.json()
+        setAccount(data.authenticated ? data.username : null)
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setError('Could not check your session. Check the backend, then refresh.')
+      })
+      .finally(() => {
+        clearTimeout(timer)
+        setChecking(false)
+      })
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [])
+
+  async function adminRequest(endpoint, body) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10000)
+    try {
+      const response = await fetch(`/api/admin/${endpoint}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Request': '1' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      })
+      const data = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(data?.message || 'The admin request failed.')
+      return data
+    } catch (failure) {
+      if (failure.name === 'AbortError') throw new Error('Request timed out. Refresh to check your session before trying again.')
+      throw failure
+    } finally { clearTimeout(timer) }
+  }
+
+  async function logIn(event) {
+    event.preventDefault()
+    if (busy) return
+    const form = event.currentTarget
+    const fields = new FormData(form)
+    const credentials = { username: String(fields.get('username') || '').trim(), password: String(fields.get('password') || '') }
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const data = await adminRequest('login', credentials)
+      if (!data.authenticated || typeof data.username !== 'string') throw new Error('Login was not confirmed.')
+      form.reset()
+      setAccount(data.username)
+      setNotice('You are logged in. Property management and enquiry viewing are the next steps.')
+    } catch (failure) {
+      setError(failure.message)
+      form.elements.namedItem('password').value = ''
+    } finally { setBusy(false) }
+  }
+
+  async function logOut() {
+    setBusy(true)
+    setError('')
+    try {
+      await adminRequest('logout', {})
+      setAccount(null)
+      setNotice('You are logged out.')
+    } catch (failure) { setError(failure.message) }
+    finally { setBusy(false) }
+  }
+
+  const fieldStyle = { display: 'block', width: '100%', marginTop: 8, padding: 12, border: '1px solid #687568', borderRadius: 8, background: 'white', color: '#202020', font: 'inherit' }
+  const buttonStyle = { padding: '14px 22px', background: '#203c2c', color: 'white', border: 0, borderRadius: 8, font: 'inherit', cursor: 'pointer', justifySelf: 'start' }
+  return (
+    <section className="hero">
+      <h1>{account ? 'Admin dashboard' : 'Admin login'}</h1>
+      {checking ? <p role="status">Checking your session...</p> : account ? (
+        <>
+          <p>Signed in as {account}.</p>
+          <p>This first step connects login and logout only. Property editing and enquiry viewing are not available yet.</p>
+          <button type="button" disabled={busy} onClick={logOut} style={buttonStyle}>{busy ? 'Logging out...' : 'Log out'}</button>
+        </>
+      ) : (
+        <>
+          <p>Use the account you created locally. There is no public admin registration.</p>
+          <form onSubmit={logIn} aria-busy={busy} style={{ display: 'grid', gap: 20, maxWidth: 500 }}>
+            <label htmlFor="admin-username">Username
+              <input id="admin-username" name="username" required maxLength={40} autoComplete="username" disabled={busy} style={fieldStyle} />
+            </label>
+            <label htmlFor="admin-password">Password
+              <input id="admin-password" name="password" type="password" required maxLength={128} autoComplete="current-password" disabled={busy} style={fieldStyle} />
+            </label>
+            <button type="submit" disabled={busy} style={buttonStyle}>{busy ? 'Logging in...' : 'Log in'}</button>
+          </form>
+        </>
+      )}
+      {error && <p role="alert" style={{ marginTop: 20 }}>{error}</p>}
+      {notice && <p role="status" style={{ marginTop: 20 }}>{notice}</p>}
+    </section>
+  )
+}
+
 function readPage() {
   return window.location.hash.slice(1) || '/'
 }
@@ -285,7 +395,7 @@ export default function App() {
   const selectedProperty = properties.find(
     (property) => page === `/property/${property.id}`
   )
-  const isPublicPage = ['/', '/properties', '/about', '/contact'].includes(page)
+  const isPublicPage = ['/', '/properties', '/about', '/contact', '/admin'].includes(page)
   const isPropertyPage = page.startsWith('/property/')
 
   return (
@@ -297,9 +407,11 @@ export default function App() {
           <a href="#/properties">Properties</a>
           <a href="#/about">About Us</a>
           <a href="#/contact">Contact</a>
+          <a href="#/admin">Admin</a>
         </nav>
       </header>
       <main>
+        {page === '/admin' && <AdminPanel />}
         {page === '/' && (
           <>
             <section className="hero">
@@ -372,4 +484,3 @@ export default function App() {
     </>
   )
 }
-
