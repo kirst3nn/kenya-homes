@@ -1,0 +1,10 @@
+DEMO PROPERTY PHOTOS
+These illustrative photos do not depict the fictional Karen or Kilimani listings.
+
+garden-villa: LARAM
+Source: https://unsplash.com/photos/a-white-building-with-wooden-floors-and-a-balcony-BmhV9TTUpHk
+License: https://unsplash.com/license
+
+city-apartment: Lisa Anna
+Source: https://unsplash.com/photos/an-empty-kitchen-and-living-room-in-an-apartment-PfeKrK-V_XA
+License: https://unsplash.com/license
