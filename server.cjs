@@ -262,8 +262,14 @@ database.exec(`
 const insertEnquiry = database.prepare(
   'INSERT INTO enquiries (name, email, message) VALUES (?, ?, ?)'
 )
-
-app.post('/api/enquiries', (request, response) => {
+const enquiryLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { message: 'Too many enquiry attempts. Try again in 10 minutes.' }
+})
+app.post('/api/enquiries', enquiryLimiter, (request, response) => {
   if (!request.is('application/json')) {
     return response.status(415).json({ message: 'Send enquiry data as JSON.' })
   }
