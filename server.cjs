@@ -290,8 +290,8 @@ app.post('/api/enquiries', enquiryLimiter, (request, response) => {
   if (cleanEmail.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
     return response.status(400).json({ message: 'Enter a valid email address.' })
   }
-  if (!cleanMessage || cleanMessage.length > 2000) {
-    return response.status(400).json({ message: 'Enter a message of 1 to 2000 characters.' })
+  if (cleanMessage.length < 10 || cleanMessage.length > 2000) {
+    return response.status(400).json({ message: 'Enter a message of 10 to 2000 characters.' })
   }
   try {
     const result = insertEnquiry.run(cleanName, cleanEmail, cleanMessage)
