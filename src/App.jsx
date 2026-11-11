@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import './App.css'
 
-function PropertyPhoto({ property }) {
+function PropertyPhoto({ property, priority = false }) {
   return (
     <figure style={{ margin: '0 0 24px', minWidth: 0 }}>
       <img
         src={property.image}
         alt={property.imageAlt}
+        loading={priority ? 'eager' : 'lazy'}
+        decoding="async"
+        fetchPriority={priority ? 'high' : 'auto'}
         width="1200"
         height="800"
         style={{
@@ -25,10 +28,10 @@ function PropertyPhoto({ property }) {
   )
 }
 
-function PropertyCard({ property }) {
+function PropertyCard({ property, priority = false }) {
   return (
     <article className="property-card">
-      <PropertyPhoto property={property} />
+      <PropertyPhoto property={property} priority={priority} />
       <h3>{property.title}</h3>
       <p>{property.location}</p>
       <p>{property.features}</p>
@@ -76,8 +79,8 @@ function PropertyList({ title, introduction, properties, loading, error, searcha
           </p>
         </div>
       )}
-      {visibleProperties.map((property) => (
-        <PropertyCard key={property.id} property={property} />
+      {visibleProperties.map((property, index) => (
+        <PropertyCard key={property.id} property={property} priority={index === 0} />
       ))}
       {visibleProperties.length === 0 && (
         <p>{properties.length === 0
@@ -494,7 +497,7 @@ export default function App() {
         {selectedProperty && (
           <section className="hero">
             <h1>{selectedProperty.title}</h1>
-            <PropertyPhoto property={selectedProperty} />
+            <PropertyPhoto property={selectedProperty} priority />
             <p>{selectedProperty.location}</p>
             <p>{selectedProperty.features}</p>
             <p><strong>{selectedProperty.price}</strong></p>
@@ -535,4 +538,3 @@ export default function App() {
     </>
   )
 }
-
